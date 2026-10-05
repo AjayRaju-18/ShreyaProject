@@ -1,14 +1,15 @@
 // Fake Review Checker — runs the CNN, BERT and XLNet models entirely in the browser.
 // Model files live in ./models/ (uploaded by notebooks/06_deploy_web.ipynb).
 import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs';
-import { AutoTokenizer, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0';
+import { BertTokenizer, PreTrainedTokenizer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0';
 import { cnnProb, unpackWeights } from './cnn.js';
 import { createVader } from './vader.js';
 
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
-env.allowRemoteModels = false;
-env.allowLocalModels = true;
-env.localModelPath = new URL('./models/', location.href).href;
+// Tokenizers are built straight from tokenizer.json (AutoTokenizer's local-path lookup fails in
+// transformers.js 4.3); XLNet has no dedicated class there, and the generic one reads every rule
+// from tokenizer.json. Both were checked to give the same token ids as the Python tokenizers.
+const TOKENIZER_CLASS = { bert: BertTokenizer, xlnet: PreTrainedTokenizer };
 
 const BEST_ORDER = ['XLNet', 'BERT', 'CNN'];
 const MODELS = {};          // name -> { prob: async (text, title, rating) => number, threshold }
@@ -64,7 +65,9 @@ async function loadCNN() {
 async function loadTransformer(name, dir) {
   setStatus(name, 'loading…');
   const cfg = await fetch(`./models/${dir}/config.json`).then((r) => r.json());
-  const tokenizer = await AutoTokenizer.from_pretrained(dir);
+  const [tkJson, tkConfig] = await Promise.all(['tokenizer.json', 'tokenizer_config.json']
+    .map((f) => fetch(`./models/${dir}/${f}`).then((r) => r.json())));
+  const tokenizer = new TOKENIZER_CLASS[dir](tkJson, tkConfig);
   const bytes = await fetchWithProgress(`./models/${dir}/model.onnx`, name);
   setStatus(name, 'starting…');
   const session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'] });
