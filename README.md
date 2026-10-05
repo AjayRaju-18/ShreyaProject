@@ -71,3 +71,7 @@ Each notebook writes `outputs/<model>_metrics.json` and `outputs/<model>_test_pr
 ## Fake Review Checker app
 
 Run all cells of `notebooks/05_predict.ipynb` in Colab. The last cell opens an app: type a review, click **Check review**, and it shows **FAKE / GENUINE** with each model's fake probability. Set `SHARE = True` in that cell to get a temporary public link for teammates.
+
+## Website (Hugging Face Space)
+
+`space/` holds the website (`app.py`). Run `notebooks/06_deploy_space.ipynb` in Colab to publish it, together with the trained models from Drive, to `https://huggingface.co/spaces/<username>/fake-review-checker`. To remove the website, delete the Space on Hugging Face and the `space/` folder here.
