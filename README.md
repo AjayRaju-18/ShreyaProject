@@ -67,3 +67,7 @@ Each notebook writes `outputs/<model>_metrics.json` and `outputs/<model>_test_pr
 - Jayasinghe, J. M. T., & Dassanayaka, S. (2025). Detecting deception: employing deep neural networks for fraudulent review detection on Amazon. *Neural Computing and Applications*, 37, 21715–21742.
 - Tao, J., Fang, X., & Zhou, L. (2026). Toward a Knowledge Discovery Method to Fake Review Detection. *Information Systems Frontiers*, 28, 1109–1125.
 - Ni, J., Li, J., & McAuley, J. (2019). Amazon Review Data (2018).
+
+## Fake Review Checker app
+
+Run all cells of `notebooks/05_predict.ipynb` in Colab. The last cell opens an app: type a review, click **Check review**, and it shows **FAKE / GENUINE** with each model's fake probability. Set `SHARE = True` in that cell to get a temporary public link for teammates.
