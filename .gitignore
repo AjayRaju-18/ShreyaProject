@@ -1,0 +1,20 @@
+# Data and large artefacts (dataset is shared via Google Drive, not GitHub)
+dataset/
+data/raw/
+data/processed/
+models/
+outputs/*.npy
+outputs/*_model/
+*.keras
+*.zip
+glove*.txt
+
+# Environment
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.vscode/
+*.pyc
+
+# Review slides (contain register numbers) - kept local only
+docs/*.pptx
