@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fake Review Checker</title>
+<meta name="description" content="Detect fake Amazon product reviews with CNN, BERT and XLNet models running in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f7fb; --card: #ffffff; --text: #1b1f2a; --muted: #5d6475; --line: #e3e6ee;
+    --accent: #3b4fd8; --accent-ink: #ffffff; --fake: #c62828; --fake-bg: #fdecec;
+    --real: #1f7a3a; --real-bg: #e8f5ec; --bar: #e9ecf3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11141b; --card: #1a1e28; --text: #e8ebf2; --muted: #9aa2b4; --line: #2b3140;
+      --accent: #7d8cff; --accent-ink: #0d1020; --fake: #ff7b7b; --fake-bg: #3a1d20;
+      --real: #6fd08c; --real-bg: #1a3324; --bar: #2b3140;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 Inter, system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 48px; }
+  header h1 { margin: 0 0 4px; font-size: clamp(1.7rem, 4vw, 2.3rem); font-weight: 800; letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+  label { display: block; font-weight: 600; font-size: 0.9rem; margin: 0 0 6px; }
+  textarea, input[type=text] {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  textarea { min-height: 160px; resize: vertical; }
+  .field { margin-bottom: 14px; }
+  .stars { display: flex; gap: 4px; }
+  .stars button { border: 0; background: none; font-size: 1.7rem; line-height: 1; cursor: pointer; color: var(--line); padding: 0 2px; }
+  .stars button.on { color: #f5a623; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .btn { border: 0; border-radius: 10px; padding: 11px 18px; font: 600 1rem Inter, sans-serif; cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); }
+  .btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .btn:disabled { opacity: 0.55; cursor: progress; }
+  .examples { margin-top: 14px; font-size: 0.88rem; color: var(--muted); }
+  .examples a { color: var(--accent); cursor: pointer; text-decoration: underline; margin-right: 10px; }
+  .verdict { border-radius: 12px; padding: 18px; text-align: center; margin-bottom: 16px; background: var(--bar); }
+  .verdict .word { font-size: 2.6rem; font-weight: 800; letter-spacing: 0.02em; }
+  .verdict.fake { background: var(--fake-bg); color: var(--fake); }
+  .verdict.real { background: var(--real-bg); color: var(--real); }
+  .verdict .sub { font-size: 0.9rem; color: var(--muted); }
+  .model { margin: 12px 0; }
+  .model .row { display: flex; justify-content: space-between; font-size: 0.92rem; }
+  .model .tag { font-weight: 700; }
+  .model .tag.fake { color: var(--fake); } .model .tag.real { color: var(--real); }
+  .track { position: relative; height: 10px; background: var(--bar); border-radius: 6px; margin-top: 4px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 6px; background: var(--muted); transition: width .4s; }
+  .fill.fake { background: var(--fake); } .fill.real { background: var(--real); }
+  .thr { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); opacity: .6; }
+  .status { font-size: 0.85rem; color: var(--muted); margin-top: 16px; }
+  .status div { display: flex; justify-content: space-between; gap: 8px; }
+  .note { margin-top: 28px; font-size: 0.85rem; color: var(--muted); }
+  .note a { color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.88rem; margin-top: 8px; }
+  td, th { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Fake Review Checker</h1>
+    <p>Paste a product review and three trained models (CNN, BERT, XLNet) decide if it looks fake. Everything runs in your browser.</p>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <div class="field">
+        <label for="review">Review text</label>
+        <textarea id="review" placeholder="Paste or type a product review..."></textarea>
+      </div>
+      <div class="field">
+        <label for="title">Review title (optional)</label>
+        <input id="title" type="text" placeholder="e.g. Great value">
+      </div>
+      <div class="field">
+        <label>Star rating</label>
+        <div class="stars" id="stars"></div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="check" disabled>Loading models…</button>
+        <button class="btn ghost" id="clear">Clear</button>
+      </div>
+      <div class="examples">Try:
+        <a data-ex="0">gushing 5-star</a><a data-ex="1">detailed review</a><a data-ex="2">short complaint</a>
+      </div>
+    </section>
+
+    <section class="card" aria-live="polite">
+      <div class="verdict" id="verdict">
+        <div class="word">—</div>
+        <div class="sub">Result appears here</div>
+      </div>
+      <div id="models"></div>
+      <div class="status" id="status"></div>
+    </section>
+  </div>
+
+  <section class="card note">
+    <strong>How it works.</strong> The final verdict uses <b>XLNet</b>, the best model on the test set (falls back to BERT or CNN while XLNet is still downloading).
+    Each bar shows the model's fake probability; the black tick is that model's decision threshold.
+    <table>
+      <tr><th>Model</th><th>Accuracy</th><th>F1 (fake)</th><th>ROC-AUC</th></tr>
+      <tr><td>CNN</td><td>0.930</td><td>0.569</td><td>0.885</td></tr>
+      <tr><td>BERT</td><td>0.930</td><td>0.580</td><td>0.884</td></tr>
+      <tr><td>XLNet</td><td>0.932</td><td>0.583</td><td>0.887</td></tr>
+    </table>
+    <p>Trained on 291,762 Amazon reviews (Cell Phones, Digital Music, Electronics, Industrial &amp; Scientific, Software). "Fake" follows the project's labelling rule: reviews by reviewers whose non-verified-purchase ratio is above 0.5. The first visit downloads about 250 MB of models; later visits use the browser cache.
+    Final-year project, Department of Information Technology, Government College of Technology · <a href="https://github.com/AjayRaju-18/ShreyaProject">source code</a></p>
+  </section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
