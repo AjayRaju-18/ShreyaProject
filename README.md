@@ -13,6 +13,17 @@ This project classifies Amazon product reviews as **Fake (1)** or **Genuine (0)*
 | 02 | [`notebooks/02_bert_fake_review.ipynb`](notebooks/02_bert_fake_review.ipynb) | Fine-tunes `bert-base-uncased` |
 | 03 | [`notebooks/03_xlnet_fake_review.ipynb`](notebooks/03_xlnet_fake_review.ipynb) | Fine-tunes `xlnet-base-cased` |
 | 04 | [`notebooks/04_model_comparison.ipynb`](notebooks/04_model_comparison.ipynb) | Comparison table, bar chart, ROC/PR curves, confusion matrices, per-category F1 |
+| 05 | [`notebooks/05_predict.ipynb`](notebooks/05_predict.ipynb) | Loads the trained models from Drive and classifies new reviews (single reviews or a whole CSV) without retraining |
+
+## Trained models (in Drive `outputs/`)
+
+| Model | Files |
+|---|---|
+| CNN | `cnn_model.keras`, `cnn_vocab.json`, `cnn_scaler.pkl`, `cnn_config.json` |
+| BERT | `bert_model/` (weights, tokenizer, `predict_config.json`) |
+| XLNet | `xlnet_model/` (weights, tokenizer, `predict_config.json`) |
+
+To use them, open `05_predict.ipynb` in Colab, run all cells, and call `predict([...reviews...])`.
 
 Open any notebook in Colab via **File → Open notebook → GitHub** and paste this repository's URL.
 
