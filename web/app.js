@@ -11,7 +11,9 @@ ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/di
 // from tokenizer.json. Both were checked to give the same token ids as the Python tokenizers.
 const TOKENIZER_CLASS = { bert: BertTokenizer, xlnet: PreTrainedTokenizer };
 
-const BEST_ORDER = ['XLNet', 'BERT', 'CNN'];
+// The website labels a review FAKE when the fake probability is 50% or more. (The notebooks use stricter
+// validation-tuned thresholds, e.g. 0.90 for XLNet, which almost never fire on typed reviews.)
+const CUTOFF = 0.5;
 const MODELS = {};          // name -> { prob: async (text, title, rating) => number, threshold }
 const $ = (id) => document.getElementById(id);
 let sentiment;              // VADER compound score, set up in loadCNN()
@@ -127,13 +129,15 @@ $('check').onclick = async () => {
     for (const name of ['CNN', 'BERT', 'XLNet']) {
       if (!MODELS[name]) continue;
       const p = await MODELS[name].prob(text, title, rating);
-      results.push({ name, p, th: MODELS[name].threshold, fake: p >= MODELS[name].threshold });
+      results.push({ name, p, th: CUTOFF, fake: p >= CUTOFF });
     }
-    const best = BEST_ORDER.map((n) => results.find((r) => r.name === n)).find(Boolean);
+    // Final verdict: average fake probability of the loaded models, FAKE at 50% or more.
+    const avg = results.reduce((s, r) => s + r.p, 0) / results.length;
+    const fake = avg >= CUTOFF;
     const v = $('verdict');
-    v.className = 'verdict ' + (best.fake ? 'fake' : 'real');
-    v.innerHTML = `<div class="word">${best.fake ? 'FAKE' : 'GENUINE'}</div>
-      <div class="sub">Final verdict from ${best.name} · fake probability ${(best.p * 100).toFixed(1)}%</div>`;
+    v.className = 'verdict ' + (fake ? 'fake' : 'real');
+    v.innerHTML = `<div class="word">${fake ? 'FAKE' : 'GENUINE'}</div>
+      <div class="sub">Average fake probability of ${results.map((r) => r.name).join(', ')}: ${(avg * 100).toFixed(1)}%</div>`;
     $('models').innerHTML = results.map((r) => `
       <div class="model">
         <div class="row"><span>${r.name}</span>
