@@ -71,12 +71,22 @@ export function unpackWeights(all, manifest) {
   return W;
 }
 
-/** Fake probability for one review. `sentiment(text)` must return the VADER compound score. */
-export function cnnProb({ W, manifest, cfg, vocab, sentiment }, text, title, rating) {
+/** Tokens, ids, raw engineered features and their scaled values for one review. */
+function prepare({ cfg, vocab, sentiment }, text, title, rating) {
+  const tokens = tweetTokenize(cleanText(title + ' . ' + text)).slice(0, cfg.max_len);
+  const rs = sentiment(text);
+  const feats = {
+    rating, review_length: text.trim().split(/\s+/).filter(Boolean).length, review_sentiment: rs,
+    summary_sentiment: sentiment(title), rating_sentiment_difference: rating / 5 - rs,
+  };
+  const num = cfg.num_features.map((f, i) => (feats[f] - cfg.scaler_mean[i]) / cfg.scaler_scale[i]);
+  return { tokens, ids: tokens.map((w) => vocab[w] ?? 1), feats, num };
+}
+
+/** Network forward pass from token ids and scaled engineered features. */
+function forward({ W, manifest, cfg }, ids, num) {
   const S = (n) => manifest[n].shape;
   const L = cfg.max_len, D = S('embedding')[1];
-  const ids = tweetTokenize(cleanText(title + ' . ' + text)).slice(0, L).map((w) => vocab[w] ?? 1);
-
   let x = new Float32Array(L * D);                  // padding positions use embedding row 0, as in training
   for (let t = 0; t < L; t++) {
     const id = ids[t] ?? 0;
@@ -91,15 +101,32 @@ export function cnnProb({ W, manifest, cfg, vocab, sentiment }, text, title, rat
   }
   const g = new Float32Array(ch).fill(-Infinity);
   for (let t = 0; t < len; t++) for (let c = 0; c < ch; c++) g[c] = Math.max(g[c], x[t * ch + c]);
-
-  const rs = sentiment(text);
-  const feats = {
-    rating, review_length: text.trim().split(/\s+/).filter(Boolean).length, review_sentiment: rs,
-    summary_sentiment: sentiment(title), rating_sentiment_difference: rating / 5 - rs,
-  };
-  const num = cfg.num_features.map((f, i) => (feats[f] - cfg.scaler_mean[i]) / cfg.scaler_scale[i]);
   const h = dense(Float32Array.from([...g, ...num]), W.dense1_kernel, W.dense1_bias, S('dense1_kernel')[1]);
   for (let i = 0; i < h.length; i++) if (h[i] < 0) h[i] = 0;
   const z = dense(h, W.dense2_kernel, W.dense2_bias, 1)[0];
   return 1 / (1 + Math.exp(-z));
+}
+
+/** Fake probability for one review. `sentiment(text)` must return the VADER compound score. */
+export function cnnProb(model, text, title, rating) {
+  const { ids, num } = prepare(model, text, title, rating);
+  return forward(model, ids, num);
+}
+
+/**
+ * Occlusion explanation with the CNN.
+ * - words: remove each token in turn; delta = base - without (positive = the word pushed towards FAKE)
+ * - features: replace each scaled engineered feature with the training mean (0); same sign convention
+ */
+export function cnnExplain(model, text, title, rating) {
+  const { tokens, ids, feats, num } = prepare(model, text, title, rating);
+  const base = forward(model, ids, num);
+  const words = tokens.map((tok, i) => ({
+    tok, delta: base - forward(model, ids.slice(0, i).concat(ids.slice(i + 1)), num),
+  }));
+  const features = model.cfg.num_features.map((name, j) => {
+    const n2 = num.slice(); n2[j] = 0;
+    return { name, value: feats[name], delta: base - forward(model, ids, n2) };
+  });
+  return { base, words, features };
 }

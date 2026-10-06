@@ -2,7 +2,7 @@
 // Model files live in ./models/ (uploaded by notebooks/06_deploy_web.ipynb).
 import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs';
 import { BertTokenizer, PreTrainedTokenizer } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0';
-import { cnnProb, unpackWeights } from './cnn.js';
+import { cnnProb, cnnExplain, unpackWeights } from './cnn.js';
 import { createVader } from './vader.js';
 
 ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/';
@@ -59,7 +59,8 @@ async function loadCNN() {
   sentiment = createVader(lex, emo);
   const bytes = await fetchWithProgress(base + 'weights.bin', 'CNN');
   const model = { W: unpackWeights(new Float32Array(bytes.buffer), manifest), manifest, cfg, vocab, sentiment };
-  MODELS.CNN = { prob: async (text, title, rating) => cnnProb(model, text, title, rating), threshold: cfg.threshold };
+  MODELS.CNN = { prob: async (text, title, rating) => cnnProb(model, text, title, rating), threshold: cfg.threshold,
+                 explain: (text, title, rating) => cnnExplain(model, text, title, rating) };
   setStatus('CNN', 'ready');
 }
 
@@ -112,7 +113,7 @@ const EXAMPLES = [
 document.querySelectorAll('[data-ex]').forEach((a) => (a.onclick = () => {
   const [t, s, r] = EXAMPLES[+a.dataset.ex]; $('review').value = t; $('title').value = s; rating = r; drawStars();
 }));
-$('clear').onclick = () => { $('review').value = ''; $('title').value = ''; rating = 5; drawStars(); };
+$('clear').onclick = () => { $('review').value = ''; $('title').value = ''; rating = 5; drawStars(); $('why').hidden = true; };
 
 function updateButton() {
   const ready = Object.keys(MODELS).length;
@@ -146,11 +147,84 @@ $('check').onclick = async () => {
           <div class="thr" style="left:${(r.th * 100).toFixed(1)}%" title="threshold ${r.th.toFixed(2)}"></div></div>
       </div>`).join('');
     window.lastResults = results;   // handy for checking against the Python notebook
+    renderWhy(text, title, rating, results, avg, fake);
   } catch (e) {
     $('verdict').innerHTML = `<div class="sub">Error: ${e.message}</div>`;
     console.error(e);
   } finally { updateButton(); }
 };
+
+// ---------- "Why this result?" ----------
+// Typical values in the 291,762 training reviews (medians by label), used to describe each feature.
+const TYPICAL = {
+  review_length: { fake: 102, genuine: 10 },
+  review_sentiment: { fake: 0.90, genuine: 0.61 },
+  summary_sentiment: { fake: 0.27, genuine: 0.00 },
+  rating_sentiment_difference: { fake: 0.01, genuine: 0.17 },
+};
+const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tone = (s) => (s >= 0.6 ? 'very positive' : s >= 0.05 ? 'positive' : s > -0.05 ? 'neutral' : s > -0.6 ? 'negative' : 'very negative');
+
+function describeFeature({ name, value }) {
+  const t = TYPICAL[name];
+  switch (name) {
+    case 'review_length':
+      return `Review length: <b>${value} words</b>. Fake-labelled reviews are usually long (median ${t.fake} words); genuine ones are usually short (median ${t.genuine}).`;
+    case 'review_sentiment':
+      return `Tone of the review: <b>${tone(value)}</b> (sentiment ${value.toFixed(2)} on a −1…+1 scale). Fake-labelled reviews are typically very positive (median ${t.fake.toFixed(2)}); genuine ones less so (${t.genuine.toFixed(2)}).`;
+    case 'summary_sentiment':
+      return `Tone of the title: <b>${tone(value)}</b> (${value.toFixed(2)}). Fake-labelled titles lean positive (median ${t.fake.toFixed(2)}); genuine titles are usually neutral (${t.genuine.toFixed(2)}).`;
+    case 'rating':
+      return `Star rating: <b>${value}★</b>. Ratings on their own separate fake and genuine reviews only weakly; they matter mostly together with the tone of the text.`;
+    case 'rating_sentiment_difference':
+      return `Match between stars and tone: gap <b>${value.toFixed(2)}</b>. In fake-labelled reviews the stars and the wording agree almost exactly (median gap ${t.fake.toFixed(2)}); genuine reviews show a bit more mismatch (${t.genuine.toFixed(2)}).`;
+    default:
+      return name;
+  }
+}
+
+function renderWhy(text, title, rating, results, avg, fake) {
+  const box = $('why');
+  if (!MODELS.CNN?.explain) { box.hidden = true; return; }
+  const ex = MODELS.CNN.explain(text, title, rating);
+  const pts = (d) => `${d > 0 ? '+' : '−'}${Math.abs(d * 100).toFixed(1)} pts`;
+  const dirOf = (d) => (Math.abs(d) < 0.005 ? ['neutral', 'little effect'] : d > 0 ? ['fake', `▲ towards FAKE`] : ['real', `▼ towards GENUINE`]);
+
+  // Reasons: engineered features ranked by influence, then the most influential words.
+  const feats = ex.features.slice().sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const words = ex.words.filter((w) => /\w/.test(w.tok));
+  const topFake = words.filter((w) => w.delta > 0.002).sort((a, b) => b.delta - a.delta).slice(0, 5);
+  const topReal = words.filter((w) => w.delta < -0.002).sort((a, b) => a.delta - b.delta).slice(0, 5);
+  const items = feats.map((f) => {
+    const [cls, label] = dirOf(f.delta);
+    return `<li><span class="dir ${cls}">${label}<br><small>${pts(f.delta)}</small></span><span>${describeFeature(f)}</span></li>`;
+  });
+  if (topFake.length) items.push(`<li><span class="dir fake">▲ towards FAKE</span><span>Words that raised the fake score: ${topFake.map((w) => `<b>${escapeHtml(w.tok)}</b>`).join(', ')}</span></li>`);
+  if (topReal.length) items.push(`<li><span class="dir real">▼ towards GENUINE</span><span>Words that lowered the fake score: ${topReal.map((w) => `<b>${escapeHtml(w.tok)}</b>`).join(', ')}</span></li>`);
+  $('why-reasons').innerHTML = items.join('');
+
+  // Summary sentence.
+  const leanFake = results.filter((r) => r.fake).length;
+  const main = feats.find((f) => Math.abs(f.delta) >= 0.005 && (f.delta > 0) === fake);
+  const mainText = main ? {
+    review_length: `its length (${main.value} words)`, review_sentiment: `its ${tone(main.value)} tone`,
+    summary_sentiment: `the ${tone(main.value)} title`, rating: `the ${main.value}★ rating`,
+    rating_sentiment_difference: 'how closely the stars match the wording',
+  }[main.name] : null;
+  $('why-summary').innerHTML = `<b style="color:var(--${fake ? 'fake' : 'real'})">${fake ? 'FAKE' : 'GENUINE'}</b> — average fake probability
+    ${(avg * 100).toFixed(1)}% (cut-off 50%). ${leanFake} of ${results.length} model${results.length > 1 ? 's' : ''} lean${results.length === 1 ? 's' : ''} fake.
+    ${mainText ? `The biggest factor for the CNN was ${mainText}.` : ''}`;
+
+  // Highlighted text (tokens as the CNN sees them: lowercased title + review).
+  const maxAbs = Math.max(1e-6, ...ex.words.map((w) => Math.abs(w.delta)));
+  $('why-text').innerHTML = ex.words.map((w) => {
+    const a = Math.min(1, Math.abs(w.delta) / maxAbs);
+    if (a < 0.08) return escapeHtml(w.tok);
+    const rgb = w.delta > 0 ? '198,40,40' : '31,122,58';
+    return `<span class="hl" style="background:rgba(${rgb},${(0.15 + 0.6 * a).toFixed(2)})" title="${pts(w.delta)}">${escapeHtml(w.tok)}</span>`;
+  }).join(' ');
+  box.hidden = false;
+}
 
 // Load the small CNN first so the page is usable quickly, then the transformers.
 (async () => {
