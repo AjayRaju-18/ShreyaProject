@@ -14,6 +14,9 @@ const TOKENIZER_CLASS = { bert: BertTokenizer, xlnet: PreTrainedTokenizer };
 // The website labels a review FAKE when the fake probability is 50% or more. (The notebooks use stricter
 // validation-tuned thresholds, e.g. 0.90 for XLNet, which almost never fire on typed reviews.)
 const CUTOFF = 0.5;
+// Probability of the predicted label (fake prob for FAKE, 1 - fake prob for GENUINE), and its display text.
+const labelProb = (p) => (p >= CUTOFF ? p : 1 - p);
+const shownPct = (p) => `${(labelProb(p) * 100).toFixed(1)}% ${p >= CUTOFF ? 'fake' : 'genuine'}`;
 const MODELS = {};          // name -> { prob: async (text, title, rating) => number, threshold }
 const $ = (id) => document.getElementById(id);
 let sentiment;              // VADER compound score, set up in loadCNN()
@@ -138,13 +141,14 @@ $('check').onclick = async () => {
     const v = $('verdict');
     v.className = 'verdict ' + (fake ? 'fake' : 'real');
     v.innerHTML = `<div class="word">${fake ? 'FAKE' : 'GENUINE'}</div>
-      <div class="sub">Average fake probability of ${results.map((r) => r.name).join(', ')}: ${(avg * 100).toFixed(1)}%</div>`;
+      <div class="sub">${shownPct(avg)} (average of ${results.map((r) => r.name).join(', ')})</div>`;
+    // Each model shows the percentage for the label it gives: fake % for FAKE, genuine % for GENUINE.
     $('models').innerHTML = results.map((r) => `
       <div class="model">
         <div class="row"><span>${r.name}</span>
-          <span class="tag ${r.fake ? 'fake' : 'real'}">${r.fake ? 'FAKE' : 'GENUINE'} · ${(r.p * 100).toFixed(1)}%</span></div>
-        <div class="track"><div class="fill ${r.fake ? 'fake' : 'real'}" style="width:${(r.p * 100).toFixed(1)}%"></div>
-          <div class="thr" style="left:${(r.th * 100).toFixed(1)}%" title="threshold ${r.th.toFixed(2)}"></div></div>
+          <span class="tag ${r.fake ? 'fake' : 'real'}">${r.fake ? 'FAKE' : 'GENUINE'} · ${shownPct(r.p)}</span></div>
+        <div class="track"><div class="fill ${r.fake ? 'fake' : 'real'}" style="width:${(labelProb(r.p) * 100).toFixed(1)}%"></div>
+          <div class="thr" style="left:50%" title="50% line"></div></div>
       </div>`).join('');
     window.lastResults = results;   // handy for checking against the Python notebook
     renderWhy(text, title, rating, results, avg, fake);
@@ -211,8 +215,7 @@ function renderWhy(text, title, rating, results, avg, fake) {
     summary_sentiment: `the ${tone(main.value)} title`, rating: `the ${main.value}★ rating`,
     rating_sentiment_difference: 'how closely the stars match the wording',
   }[main.name] : null;
-  $('why-summary').innerHTML = `<b style="color:var(--${fake ? 'fake' : 'real'})">${fake ? 'FAKE' : 'GENUINE'}</b> — average fake probability
-    ${(avg * 100).toFixed(1)}% (cut-off 50%). ${leanFake} of ${results.length} model${results.length > 1 ? 's' : ''} lean${results.length === 1 ? 's' : ''} fake.
+  $('why-summary').innerHTML = `<b style="color:var(--${fake ? 'fake' : 'real'})">${fake ? 'FAKE' : 'GENUINE'}</b> — ${shownPct(avg)} on average across the models. ${leanFake} of ${results.length} model${results.length > 1 ? 's' : ''} lean${results.length === 1 ? 's' : ''} fake.
     ${mainText ? `The biggest factor for the CNN was ${mainText}.` : ''}`;
 
   // Highlighted text (tokens as the CNN sees them: lowercased title + review).
