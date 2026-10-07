@@ -173,15 +173,15 @@ function describeFeature({ name, value }) {
   const t = TYPICAL[name];
   switch (name) {
     case 'review_length':
-      return `Review length: <b>${value} words</b>. Fake-labelled reviews are usually long (median ${t.fake} words); genuine ones are usually short (median ${t.genuine}).`;
+      return `Review length: <b>${value} words</b>. In the training data, fake-labelled reviews tended to be longer (median ${t.fake} words vs ${t.genuine} for genuine ones), so length nudges the score. It is only one signal: short reviews can be fake and long ones genuine.`;
     case 'review_sentiment':
-      return `Tone of the review: <b>${tone(value)}</b> (sentiment ${value.toFixed(2)} on a −1…+1 scale). Fake-labelled reviews are typically very positive (median ${t.fake.toFixed(2)}); genuine ones less so (${t.genuine.toFixed(2)}).`;
+      return `Tone of the review: <b>${tone(value)}</b> (sentiment ${value.toFixed(2)} on a −1…+1 scale). In the training data, fake-labelled reviews tended to sound more positive (median ${t.fake.toFixed(2)} vs ${t.genuine.toFixed(2)}), but plenty of genuine reviews are very positive too.`;
     case 'summary_sentiment':
-      return `Tone of the title: <b>${tone(value)}</b> (${value.toFixed(2)}). Fake-labelled titles lean positive (median ${t.fake.toFixed(2)}); genuine titles are usually neutral (${t.genuine.toFixed(2)}).`;
+      return `Tone of the title: <b>${tone(value)}</b> (${value.toFixed(2)}). In the training data, fake-labelled titles leaned slightly more positive (median ${t.fake.toFixed(2)} vs ${t.genuine.toFixed(2)}); this is a weak signal on its own.`;
     case 'rating':
       return `Star rating: <b>${value}★</b>. Ratings on their own separate fake and genuine reviews only weakly; they matter mostly together with the tone of the text.`;
     case 'rating_sentiment_difference':
-      return `Match between stars and tone: gap <b>${value.toFixed(2)}</b>. In fake-labelled reviews the stars and the wording agree almost exactly (median gap ${t.fake.toFixed(2)}); genuine reviews show a bit more mismatch (${t.genuine.toFixed(2)}).`;
+      return `Match between stars and tone: gap <b>${value.toFixed(2)}</b>. In the training data, stars and wording matched more closely in fake-labelled reviews (median gap ${t.fake.toFixed(2)} vs ${t.genuine.toFixed(2)}); a close match is common in genuine reviews as well.`;
     default:
       return name;
   }
